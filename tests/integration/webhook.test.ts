@@ -3,7 +3,7 @@
  */
 import request from 'supertest';
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+// PrismaClient is used via prisma instance imported from setup
 import { createWebhookRouter } from '../../src/routes/webhook';
 import { testPrisma } from '../setup';
 
@@ -13,6 +13,14 @@ const mockWhatsAppProvider = {
   sendText: jest.fn(),
   validateWebhook: jest.fn(),
 };
+
+// Mock AI Orchestrator for integration tests
+jest.mock('../../src/ai/AIOrchestrator', () => ({
+  routeMessage: jest.fn(),
+}));
+
+import { routeMessage } from '../../src/ai/AIOrchestrator';
+const mockRouteMessage = routeMessage as jest.MockedFunction<typeof routeMessage>;
 
 describe('Webhook Integration Tests', () => {
   let app: express.Application;
@@ -26,6 +34,9 @@ describe('Webhook Integration Tests', () => {
 
     // Reset mocks
     jest.clearAllMocks();
+    
+    // Reset AI orchestrator mock
+    mockRouteMessage.mockReset();
   });
 
   describe('POST /whatsapp', () => {
@@ -41,6 +52,13 @@ describe('Webhook Integration Tests', () => {
       mockWhatsAppProvider.sendText.mockResolvedValue({
         success: true,
         messageId: 'msg123',
+      });
+      
+      // Mock AI orchestrator to return log_meal tool
+      mockRouteMessage.mockResolvedValue({
+        type: 'tool',
+        toolName: 'log_meal',
+        args: { text: 'grilled chicken and salad' },
       });
 
       const response = await request(app)
@@ -65,8 +83,9 @@ describe('Webhook Integration Tests', () => {
         where: { rawText: 'grilled chicken and salad' },
       });
       expect(meal).toBeTruthy();
-      expect((meal!.tags as any).protein).toBe(true);
-      expect((meal!.tags as any).veggies).toBe(true);
+      const tags = JSON.parse(meal!.tags);
+      expect(tags.protein).toBe(true);
+      expect(tags.veggies).toBe(true);
 
       // Check that user was created
       const user = await testPrisma.user.findFirst({
@@ -99,6 +118,13 @@ describe('Webhook Integration Tests', () => {
         success: true,
         messageId: 'msg456',
       });
+      
+      // Mock AI orchestrator to return set_preferences tool
+      mockRouteMessage.mockResolvedValue({
+        type: 'tool',
+        toolName: 'set_preferences',
+        args: { goal: 'fat_loss' },
+      });
 
       const response = await request(app)
         .post('/whatsapp')
@@ -119,10 +145,10 @@ describe('Webhook Integration Tests', () => {
       });
       expect(user?.preferences?.goal).toBe('fat_loss');
 
-      // Verify confirmation message was sent
+      // Verify confirmation message was sent (new AI format)
       expect(mockWhatsAppProvider.sendText).toHaveBeenCalledWith({
         to: '+1234567890',
-        text: expect.stringContaining('Goal set to: Fat Loss'),
+        text: expect.stringContaining('✅ Updated: goal: fat_loss'),
       });
     });
 
@@ -136,7 +162,7 @@ describe('Webhook Integration Tests', () => {
         });
 
       expect(response.status).toBe(400);
-      expect(response.body.error).toBe('Invalid webhook');
+      expect(response.body.error).toBe('Invalid webhook request');
     });
 
     test('should handle message too long error', async () => {

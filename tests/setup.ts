@@ -10,6 +10,8 @@ process.env.TWILIO_ACCOUNT_SID = 'ACtest123456789012345678901234567890';
 process.env.TWILIO_AUTH_TOKEN = 'test_auth_token_123456789012345678901234';
 process.env.TWILIO_PHONE_NUMBER = 'whatsapp:+1234567890';
 process.env.LOG_LEVEL = 'error';
+// CRITICAL: Mock OpenAI key to prevent real API calls during testing
+process.env.OPENAI_API_KEY = 'sk-test-mock-key-for-testing-only-not-real';
 
 // Global test database instance
 let testPrisma: PrismaClient;

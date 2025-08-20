@@ -4,6 +4,14 @@
 import { HintGenerator, HintContext } from '../../src/modules/meals/HintGenerator';
 import { MealTags } from '../../src/modules/meals/MealTagger';
 
+// Mock the time utility to make tests deterministic
+jest.mock('../../src/utils/time', () => ({
+  getCurrentHour: jest.fn(() => 14), // Mock to 2 PM (not late)
+  formatTimeString: jest.fn(),
+  parseTimeString: jest.fn(),
+  formatDateForQuery: jest.fn(),
+}));
+
 describe('HintGenerator', () => {
   let generator: HintGenerator;
 

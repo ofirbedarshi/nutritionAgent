@@ -71,26 +71,26 @@ describe('DailySummaryService', () => {
           {
             userId,
             rawText: 'pizza',
-            tags: {
+            tags: JSON.stringify({
               protein: false,
               veggies: false,
               carbs: 'high',
               junk: true,
               timeOfDay: 'evening',
-            },
+            }),
             createdAt: new Date('2024-01-15T18:00:00Z'),
           },
           {
             userId,
             rawText: 'late night snack',
-            tags: {
+            tags: JSON.stringify({
               protein: false,
               veggies: false,
               carbs: 'medium',
               junk: false,
               timeOfDay: 'late',
-            },
-            createdAt: new Date('2024-01-15T23:00:00Z'),
+            }),
+            createdAt: new Date('2024-01-15T21:30:00Z'), // 21:30 UTC to stay within day bounds
           },
         ],
       });
@@ -98,10 +98,10 @@ describe('DailySummaryService', () => {
       const summary = await service.composeDailySummary(userId, testDate);
       
       expect(summary.mealsCount).toBe(3);
-      expect(summary.lateMeals).toBe(1);
-      expect(summary.veggiesRatio).toBe(1/3); // 1 out of 3 meals had veggies
-      expect(summary.proteinRatio).toBe(1/3); // 1 out of 3 meals had protein
-      expect(summary.junkRatio).toBe(1/3); // 1 out of 3 meals was junk
+      expect(summary.lateMeals).toBe(1); // 1 late meal (23:00)
+      expect(summary.veggiesRatio).toBe(1/3); // 1 out of 3 meals had veggies (grilled chicken with salad)
+      expect(summary.proteinRatio).toBe(1/3); // 1 out of 3 meals had protein (grilled chicken)
+      expect(summary.junkRatio).toBe(1/3); // 1 out of 3 meals was junk (pizza)
     });
 
     test('should generate appropriate suggestions', async () => {
@@ -113,25 +113,25 @@ describe('DailySummaryService', () => {
           {
             userId,
             rawText: 'pizza',
-            tags: {
+            tags: JSON.stringify({
               protein: false,
               veggies: false,
               carbs: 'high',
               junk: true,
               timeOfDay: 'late',
-            },
-            createdAt: new Date('2024-01-15T23:00:00Z'),
+            }),
+            createdAt: new Date('2024-01-15T21:30:00Z'), // Late but within day bounds
           },
           {
             userId,
             rawText: 'burger',
-            tags: {
+            tags: JSON.stringify({
               protein: false,
               veggies: false,
               carbs: 'high',
               junk: true,
               timeOfDay: 'evening',
-            },
+            }),
             createdAt: new Date('2024-01-15T18:00:00Z'),
           },
         ],
@@ -154,25 +154,25 @@ describe('DailySummaryService', () => {
           {
             userId,
             rawText: 'grilled chicken with vegetables',
-            tags: {
+            tags: JSON.stringify({
               protein: true,
               veggies: true,
               carbs: 'low',
               junk: false,
               timeOfDay: 'noon',
-            },
+            }),
             createdAt: new Date('2024-01-15T12:00:00Z'),
           },
           {
             userId,
             rawText: 'salmon with quinoa and broccoli',
-            tags: {
+            tags: JSON.stringify({
               protein: true,
               veggies: true,
               carbs: 'medium',
               junk: false,
               timeOfDay: 'evening',
-            },
+            }),
             createdAt: new Date('2024-01-15T18:00:00Z'),
           },
         ],
@@ -265,7 +265,8 @@ describe('DailySummaryService', () => {
         where: { userId, direction: 'OUT' },
       });
       expect(messageLog).toBeTruthy();
-      expect((messageLog!.payload as any).type).toBe('daily_summary');
+      const payload = JSON.parse(messageLog!.payload);
+      expect(payload.type).toBe('daily_summary');
     });
 
     test('should handle send failure gracefully', async () => {

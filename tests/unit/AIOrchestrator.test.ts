@@ -2,21 +2,23 @@
  * Unit tests for AI Orchestrator
  */
 
-import { routeMessage } from '../../src/ai/AIOrchestrator';
+// Mock OpenAI - create a simple mock that we can control
+const mockCreate = jest.fn();
 
-// Mock OpenAI
 jest.mock('openai', () => {
   return {
     __esModule: true,
     default: jest.fn().mockImplementation(() => ({
       chat: {
         completions: {
-          create: jest.fn(),
+          create: mockCreate,
         },
       },
     })),
   };
 });
+
+import { routeMessage } from '../../src/ai/AIOrchestrator';
 
 // Mock config
 jest.mock('../../src/config', () => ({
@@ -40,10 +42,11 @@ jest.mock('../../src/lib/logger', () => ({
 import OpenAI from 'openai';
 
 const mockOpenAI = OpenAI as jest.MockedClass<typeof OpenAI>;
-const mockCreate = jest.fn();
 
 beforeEach(() => {
   jest.clearAllMocks();
+  
+  // Reset the mock implementation
   mockOpenAI.mockImplementation(() => ({
     chat: {
       completions: {
@@ -51,6 +54,9 @@ beforeEach(() => {
       },
     },
   } as any));
+  
+  // Ensure the mock create function is properly reset
+  mockCreate.mockClear();
 });
 
 describe('AIOrchestrator', () => {
@@ -214,10 +220,10 @@ describe('AIOrchestrator', () => {
       });
 
       const context = {
-        goal: 'muscle_gain',
-        tone: 'funny',
+        goal: 'muscle_gain' as const,
+        tone: 'funny' as const,
         reportTime: '21:30',
-        focus: ['protein', 'veggies']
+        focus: ['protein', 'veggies'] as const
       };
 
       await routeMessage('had a salad', context);
