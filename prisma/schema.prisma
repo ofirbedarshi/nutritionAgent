@@ -1,0 +1,54 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  phone       String   @unique
+  language    String   @default("he")
+  createdAt   DateTime @default(now())
+  storeMedia  Boolean  @default(false) // placeholder for future
+
+  preferences Preferences?
+  meals       Meal[]
+  messageLogs MessageLog[]
+}
+
+model Preferences {
+  userId        String  @id
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal          String  @default("general") // enum-like: 'fat_loss'|'muscle_gain'|'maintenance'|'general'
+  tone          String  @default("friendly") // 'friendly'|'clinical'|'funny'
+  reportTime    String  @default("21:30")    // "HH:mm"
+  reportFormat  String  @default("text")     // future-proof
+  focus         String  @default("[]")       // e.g. ["protein","veggies"] - JSON string
+  thresholds    String  @default("{}")       // e.g. { "lateHour": 21 } - JSON string
+  updatedAt     DateTime @default(now()) @updatedAt
+}
+
+model Meal {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  createdAt  DateTime @default(now())
+  sourceType String   @default("TEXT")
+  rawText    String
+  tags       String   @default("{}") // { protein:boolean, veggies:boolean, carbs:'low'|'medium'|'high', junk:boolean, timeOfDay:'morning'|'noon'|'evening'|'late' } - JSON string
+}
+
+model MessageLog {
+  id         String   @id @default(cuid())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId     String?
+  createdAt  DateTime @default(now())
+  direction  String   // 'IN'|'OUT'
+  payload    String   // JSON string
+} 
