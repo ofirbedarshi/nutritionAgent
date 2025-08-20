@@ -1,0 +1,113 @@
+
+# Project Rules for AI Assistant
+
+## Key Rules Summary:
+
+### Code Style & Structure
+- Write simple, readable, and clean code
+- Use highly descriptive and meaningful variable and function names
+- Functions should be small, single-purpose, with minimal side effects
+- Break down logic when it gets too long or mixed-purpose
+- Create new files when it makes things clearer or more reusable
+- Before creating a new file, check if an existing one fits the logic — reuse when appropriate
+
+### Modularity & Abstraction
+- Separate concerns and abstract logic properly
+- Create entities/components/services when responsibility justifies it
+- Use `class` only when it reflects a clear conceptual entity or benefits significantly from OOP
+- Default to functional composition otherwise
+- Every file, function, and class must have a clear, focused responsibility
+
+### Comments & Code Clarity
+- Don’t comment trivial or obvious logic — clean, well-named code should speak for itself
+- Write comments only when:
+  - Logic is non-obvious or tricky
+  - It’s a temporary workaround or “hack”
+  - There’s a TODO for future work
+- Comments should add clarity — not clutter
+
+### TypeScript & Best Practices
+- Follow modern, widely accepted TypeScript standards
+- Avoid outdated patterns or anti-patterns
+- Follow proper standards for all external services/APIs/libraries
+- Code should be testable and maintainable
+
+### Communication & Assumptions
+- If anything is unclear — ask Ofir before proceeding
+- Do not make assumptions unless the intent is 100% obvious
+- Clarify when in doubt — don’t guess
+
+### Version Control
+- NEVER commit or push code unless explicitly instructed by Ofir
+- Do NOT suggest commits, pull requests, or git actions unless asked
+
+### Database Safety
+- NEVER change the database (migrations, resets, data modifications) without explicit permission from Ofir
+- ALWAYS ask before running any database operations that could modify schema or data
+- Only read/query operations are allowed without permission
+
+### Refactoring & Iteration
+- After making changes or trying a new implementation:
+  - Check for leftover or obsolete code from earlier attempts
+  - If outdated or unused logic remains — suggest removing it
+  - Keep the codebase clean, relevant, and focused
+
+### Code Style & Consistency
+- Use `const` by default, avoid `var`, and prefer arrow functions
+- Use object/array destructuring where it improves clarity
+- Avoid magic numbers or strings — assign them to clearly named constants
+
+### Structure & Reusability
+- Extract repeated logic into `/utils` or `/services` for better reuse and separation
+
+### Error Handling & Logging
+- Always log errors with clear context:
+  console.error('[createOrder] Failed to save order', error)
+- Log critical actions (e.g., user creation, token refresh) to aid debugging and tracing
+
+
+## Typing Rules
+
+### General Typing Rules
+Always use explicit types for function parameters and return values — no implicit any
+
+Prefer type aliases over interface unless inheritance is needed
+
+Use interface only for class contracts or external types
+
+Avoid any — use unknown and narrow it explicitly
+
+For dynamic object shapes, use Record<string, T> instead of loose object types
+
+### Type Structure & Reuse
+ALWAYS define types in separate files in the types/ or @/types/ folder — NEVER define types within service, component, or logic files
+
+Group related types in domain-specific files (e.g., types/product.ts, types/user.ts, types/embedding.ts)
+
+Use enums or union types (e.g., 'admin' | 'user' | 'guest') for predefined options
+
+Prefer type composition (&) over deep inheritance
+
+### Clean & Consistent Usage
+Use PascalCase for all types and interfaces (UserInfo, OrderStatus)
+
+Always annotate return types for exported functions, even if inferred
+
+### Safety
+Use readonly when mutation is not allowed
+
+Use type guards (in, typeof, instanceof) to safely narrow types
+
+Use built-in utility types like Partial<T>, Pick<T, K>, Omit<T, K> to avoid duplication
+
+
+
+
+
+### General
+ - I might change files manually from time to time so - 
+Every time you change a file, read it before! see its lastest version. Update your memory and then do what I asked you.
+
+## Final Note
+The goal is to build something excellent — clean, scalable, and collaborative.
+If you believe there’s a better way to approach something, feel free to bring it up. Let's keep the quality high and the communication clear.
