@@ -116,4 +116,4 @@ export const tools = [
   }
 ];
 
-export type ToolName = "set_preferences" | "log_meal" | "request_summary" | "ask_coach"; 
+// Types are now centralized in src/types/index.ts 

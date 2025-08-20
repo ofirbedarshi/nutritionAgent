@@ -1,8 +1,8 @@
 /**
  * Preference service for managing user preferences
  */
-import { PrismaClient, Preferences } from '@prisma/client';
-import { PreferenceUpdate } from './PreferenceParser';
+import { PrismaClient } from '@prisma/client';
+import { type PreferenceUpdate } from '../../types';
 import { logger } from '../../lib/logger';
 
 export class PreferenceService {
@@ -11,7 +11,7 @@ export class PreferenceService {
   /**
    * Apply preference updates to a user
    */
-  async applyPreferences(userId: string, updates: PreferenceUpdate): Promise<Preferences> {
+  async applyPreferences(userId: string, updates: PreferenceUpdate) {
     try {
       const updateData: Record<string, unknown> = {};
 
@@ -72,7 +72,7 @@ export class PreferenceService {
   /**
    * Get user preferences
    */
-  async getUserPreferences(userId: string): Promise<Preferences | null> {
+  async getUserPreferences(userId: string) {
     try {
       return await this.prisma.preferences.findUnique({
         where: { userId },

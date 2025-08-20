@@ -10,17 +10,26 @@ import { PreferenceService } from '../modules/prefs/PreferenceService';
 import { MealService } from '../modules/meals/MealService';
 import { DailySummaryService } from '../modules/reports/DailySummaryService';
 import { CoachService } from '../modules/coach/CoachService';
-import { routeMessage, type UserContext } from '../ai/AIOrchestrator';
+import { routeMessage } from '../ai/AIOrchestrator';
 import { 
   setPreferencesSchema, 
   logMealSchema, 
   requestSummarySchema, 
-  askCoachSchema,
+  askCoachSchema
+} from '../ai/schemas';
+import { 
+  type UserContext,
   type SetPreferencesArgs,
   type LogMealArgs,
   type RequestSummaryArgs,
-  type AskCoachArgs
-} from '../ai/schemas';
+  type AskCoachArgs,
+  type Goal,
+  type Tone
+} from '../types';
+import { 
+  ERROR_MESSAGES,
+  LOG_TAGS
+} from '../constants';
 import { logger } from '../lib/logger';
 import { validateMessageLength } from '../utils/text';
 
@@ -43,8 +52,8 @@ export function createWebhookRouter(
     try {
       // Validate webhook
       if (!whatsAppProvider.validateWebhook(req)) {
-        logger.warn('Invalid webhook request', { body: req.body });
-        res.status(400).json({ error: 'Invalid webhook' });
+        logger.warn(`${LOG_TAGS.WEBHOOK_VALIDATION} Invalid webhook request`, { body: req.body });
+        res.status(400).json({ error: ERROR_MESSAGES.INVALID_WEBHOOK });
         return;
       }
 
@@ -60,7 +69,7 @@ export function createWebhookRouter(
         
         await whatsAppProvider.sendText({
           to: incomingMessage.from,
-          text: 'Message too long. Please keep it under 1000 characters.',
+          text: ERROR_MESSAGES.MESSAGE_TOO_LONG,
         });
         
         res.json({ status: 'error', message: 'Message too long' });
@@ -93,8 +102,8 @@ export function createWebhookRouter(
 
       // Build user context for AI
       const context: UserContext = {
-        goal: preferences?.goal,
-        tone: preferences?.tone,
+        goal: preferences?.goal as Goal | undefined,
+        tone: preferences?.tone as Tone | undefined,
         reportTime: preferences?.reportTime,
         focus: preferences?.focus ? JSON.parse(preferences.focus) : undefined,
       };
@@ -115,7 +124,14 @@ export function createWebhookRouter(
           case 'set_preferences':
             try {
               const validArgs = setPreferencesSchema.parse(args) as SetPreferencesArgs;
-              await preferenceService.applyPreferences(user.id, validArgs);
+              
+              // Convert readonly arrays to mutable for PreferenceService compatibility
+              const preferenceUpdate = {
+                ...validArgs,
+                focus: validArgs.focus ? [...validArgs.focus] : undefined,
+              };
+              
+              await preferenceService.applyPreferences(user.id, preferenceUpdate);
               
               const updates = [];
               if (validArgs.goal) updates.push(`goal: ${validArgs.goal}`);
@@ -168,7 +184,7 @@ export function createWebhookRouter(
               
               if (validArgs.period === 'daily') {
                 const summary = await summaryService.composeDailySummary(user.id, summaryDate);
-                const tone = (user.preferences?.tone as 'friendly' | 'clinical' | 'funny') || 'friendly';
+                const tone = (user.preferences?.tone as Tone) || 'friendly';
                 responseText = summaryService.formatSummaryText(summary, tone);
               } else {
                 // Weekly summary placeholder

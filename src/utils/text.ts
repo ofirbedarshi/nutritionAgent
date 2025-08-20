@@ -2,6 +2,8 @@
  * Text processing utility functions
  */
 
+import { MAX_MESSAGE_LENGTH, PHONE_NUMBER_REGEX } from '../constants';
+
 /**
  * Normalize phone number to E.164 format
  */
@@ -28,9 +30,16 @@ export function normalizePhoneNumber(phone: string): string {
 }
 
 /**
+ * Validate phone number format
+ */
+export function isValidPhoneNumber(phone: string): boolean {
+  return PHONE_NUMBER_REGEX.test(phone);
+}
+
+/**
  * Validate text message length
  */
-export function validateMessageLength(text: string, maxLength = 1000): boolean {
+export function validateMessageLength(text: string, maxLength = MAX_MESSAGE_LENGTH): boolean {
   return text.trim().length > 0 && text.length <= maxLength;
 }
 

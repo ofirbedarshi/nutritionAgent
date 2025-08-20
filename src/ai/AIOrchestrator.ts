@@ -5,26 +5,23 @@
 import OpenAI from 'openai';
 import { logger } from '../lib/logger';
 import { config } from '../config';
-import { tools, type ToolName } from './tools';
+import { tools } from './tools';
 import { SYSTEM_PROMPT } from './systemPrompt';
+import { 
+  type UserContext, 
+  type OrchestratorResult, 
+  type ToolName 
+} from '../types';
+import { 
+  OPENAI_MODEL, 
+  OPENAI_TEMPERATURE, 
+  OPENAI_MAX_TOKENS,
+  LOG_TAGS 
+} from '../constants';
 
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
 });
-
-export interface UserContext {
-  goal?: string;
-  tone?: string;
-  reportTime?: string;
-  focus?: string[];
-}
-
-export interface OrchestratorResult {
-  type: 'tool' | 'reply';
-  toolName?: ToolName;
-  args?: Record<string, any>;
-  text?: string;
-}
 
 /**
  * Routes incoming messages using OpenAI function calling
@@ -45,13 +42,13 @@ export async function routeMessage(
       ? `current_prefs: ${contextParts.join(', ')}`
       : 'current_prefs: none set';
 
-    logger.info('Routing message with OpenAI', {
+    logger.info(`${LOG_TAGS.AI_ROUTING} Routing message with OpenAI`, {
       text: text.substring(0, 100),
       contextSummary,
     });
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: OPENAI_MODEL,
       messages: [
         {
           role: 'system',
@@ -68,8 +65,8 @@ export async function routeMessage(
       ],
       tools,
       tool_choice: 'auto',
-      temperature: 0.1,
-      max_tokens: 500,
+      temperature: OPENAI_TEMPERATURE,
+      max_tokens: OPENAI_MAX_TOKENS,
     });
 
     const message = completion.choices[0]?.message;
