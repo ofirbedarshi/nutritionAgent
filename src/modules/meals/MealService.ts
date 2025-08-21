@@ -2,15 +2,16 @@
  * Meal service for managing meal operations
  */
 import { PrismaClient, Meal } from '@prisma/client';
-import { MealTagger, MealTags } from './MealTagger';
+import { AIMealAnalyzer } from './AIMealAnalyzer';
+import { MealAnalysis } from '../../types/meal';
 import { UserWithPreferences } from '../users/UserRepository';
 import { logger } from '../../lib/logger';
 
 export class MealService {
-  private tagger: MealTagger;
+  private analyzer: AIMealAnalyzer;
 
   constructor(private prisma: PrismaClient) {
-    this.tagger = new MealTagger();
+    this.analyzer = new AIMealAnalyzer();
   }
 
   /**
@@ -21,27 +22,36 @@ export class MealService {
     rawText: string,
     sourceType = 'TEXT',
     timestamp = new Date()
-  ): Promise<{ meal: Meal; tags: MealTags }> {
+  ): Promise<{ meal: Meal; analysis: MealAnalysis | null }> {
     try {
-      const tags = this.tagger.tagMealFromText(rawText, timestamp);
-
+      const analysis = await this.analyzer.analyzeMeal(rawText, timestamp);
+      
       const meal = await this.prisma.meal.create({
         data: {
           userId,
           rawText,
           sourceType,
-          tags: JSON.stringify(tags),
+          tags: analysis ? JSON.stringify(analysis) : '{}',
           createdAt: timestamp,
         },
       });
 
-      logger.info('Meal created successfully', {
-        mealId: meal.id,
-        userId,
-        tags,
-      });
+      if (analysis) {
+        logger.info('Meal created successfully with AI analysis', {
+          mealId: meal.id,
+          userId,
+          overallConfidence: analysis.overall_confidence,
+          ingredientCount: analysis.ingredients.length,
+        });
+      } else {
+        logger.warn('Meal created without analysis - AI failed', {
+          mealId: meal.id,
+          userId,
+          rawText,
+        });
+      }
 
-      return { meal, tags };
+      return { meal, analysis };
     } catch (error) {
       logger.error('Failed to create meal', {
         userId,
@@ -55,7 +65,7 @@ export class MealService {
   /**
    * Generate a personalized hint for a meal
    */
-  generateMealHint(_user: UserWithPreferences, _tags: MealTags): string {
+  generateMealHint(_user: UserWithPreferences, _analysis: MealAnalysis): string {
     return 'Meal logged!';
   }
 
@@ -92,7 +102,7 @@ export class MealService {
   }
 
   /**
-   * Get meal statistics for a date range
+   * Get meal statistics for a date range using AI analysis
    */
   async getMealStats(userId: string, startDate: Date, endDate: Date): Promise<{
     totalMeals: number;
@@ -100,6 +110,8 @@ export class MealService {
     veggieRatio: number;
     proteinRatio: number;
     junkRatio: number;
+    averageConfidence: number;
+    estimatedCalories: { min: number; max: number } | null;
   }> {
     try {
       const meals = await this.getMealsInRange(userId, startDate, endDate);
@@ -111,35 +123,81 @@ export class MealService {
           veggieRatio: 0,
           proteinRatio: 0,
           junkRatio: 0,
+          averageConfidence: 0,
+          estimatedCalories: null,
         };
       }
 
-      const lateMeals = meals.filter(meal => {
-        const tags = JSON.parse(meal.tags) as MealTags;
-        return tags.timeOfDay === 'late';
-      }).length;
+      let totalConfidence = 0;
+      let veggieCount = 0;
+      let proteinCount = 0;
+      let junkCount = 0;
+      let lateMeals = 0;
+      let totalCaloriesMin = 0;
+      let totalCaloriesMax = 0;
+      let calorieCount = 0;
+      let analyzedMealCount = 0;
 
-      const veggieCount = meals.filter(meal => {
-        const tags = JSON.parse(meal.tags) as MealTags;
-        return tags.veggies;
-      }).length;
-
-      const proteinCount = meals.filter(meal => {
-        const tags = JSON.parse(meal.tags) as MealTags;
-        return tags.protein;
-      }).length;
-
-      const junkCount = meals.filter(meal => {
-        const tags = JSON.parse(meal.tags) as MealTags;
-        return tags.junk;
-      }).length;
+      for (const meal of meals) {
+        try {
+          const tags = JSON.parse(meal.tags);
+          
+          // Skip meals without analysis (empty tags)
+          if (!tags || Object.keys(tags).length === 0) {
+            continue;
+          }
+          
+          const analysis = tags as MealAnalysis;
+          analyzedMealCount++;
+          
+          totalConfidence += analysis.overall_confidence;
+          
+          // Count categories with confidence weighting
+          if (analysis.categories.veggies.value && analysis.categories.veggies.confidence > 0.5) {
+            veggieCount++;
+          }
+          
+          if (analysis.categories.junk.value && analysis.categories.junk.confidence > 0.5) {
+            junkCount++;
+          }
+          
+          // Count protein-rich meals (we'll infer from nutrition data)
+          if (analysis.nutrition.protein_g && analysis.nutrition.protein_g.confidence > 0.5) {
+            if (analysis.nutrition.protein_g.min > 15) { // Significant protein
+              proteinCount++;
+            }
+          }
+          
+          // Count late meals (dinner after 9 PM or snacks after 10 PM)
+          const mealHour = meal.createdAt.getHours();
+          if ((analysis.meal_type.value === 'dinner' && mealHour >= 21) || 
+              (analysis.meal_type.value === 'snack' && mealHour >= 22)) {
+            lateMeals++;
+          }
+          
+          // Sum calories if available
+          if (analysis.nutrition.calories && analysis.nutrition.calories.confidence > 0.3) {
+            totalCaloriesMin += analysis.nutrition.calories.min;
+            totalCaloriesMax += analysis.nutrition.calories.max;
+            calorieCount++;
+          }
+          
+        } catch (parseError) {
+          logger.warn('Failed to parse meal analysis', { mealId: meal.id, parseError });
+        }
+      }
 
       return {
         totalMeals: meals.length,
         lateMeals,
-        veggieRatio: veggieCount / meals.length,
-        proteinRatio: proteinCount / meals.length,
-        junkRatio: junkCount / meals.length,
+        veggieRatio: analyzedMealCount > 0 ? veggieCount / analyzedMealCount : 0,
+        proteinRatio: analyzedMealCount > 0 ? proteinCount / analyzedMealCount : 0,
+        junkRatio: analyzedMealCount > 0 ? junkCount / analyzedMealCount : 0,
+        averageConfidence: analyzedMealCount > 0 ? totalConfidence / analyzedMealCount : 0,
+        estimatedCalories: calorieCount > 0 ? {
+          min: Math.round(totalCaloriesMin),
+          max: Math.round(totalCaloriesMax)
+        } : null,
       };
     } catch (error) {
       logger.error('Failed to calculate meal stats', {

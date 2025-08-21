@@ -2,6 +2,7 @@
  * Unit tests for DailySummaryService
  */
 import { DailySummaryService } from '../../src/modules/reports/DailySummaryService';
+import { MealAnalysis } from '../../src/types/meal';
 import { testPrisma } from '../setup';
 
 // Mock WhatsApp provider
@@ -10,6 +11,31 @@ const mockWhatsAppProvider = {
   sendText: jest.fn(),
   validateWebhook: jest.fn(),
 };
+
+// Helper function to create MealAnalysis for testing
+function createMealAnalysis(overrides: Partial<MealAnalysis> = {}): MealAnalysis {
+  return {
+    nutrition: {
+      calories: { min: 300, max: 400, confidence: 0.8 },
+      protein_g: { min: 20, max: 30, confidence: 0.9 },
+      carbs_g: { min: 15, max: 25, confidence: 0.7 },
+      fat_g: { min: 10, max: 15, confidence: 0.6 },
+      fiber_g: null,
+    },
+    categories: {
+      veggies: { value: false, confidence: 0.8 },
+      junk: { value: false, confidence: 0.8 },
+      homemade: { value: true, confidence: 0.7 },
+    },
+    ingredients: [{ name: 'test food', confidence: 0.8 }],
+    meal_type: { value: 'lunch', confidence: 0.8 },
+    portion_size: { value: 'medium', confidence: 0.7 },
+    overall_confidence: 0.8,
+    estimation_source: 'openai',
+    classification_version: 1,
+    ...overrides,
+  };
+}
 
 describe('DailySummaryService', () => {
   let service: DailySummaryService;
@@ -59,38 +85,63 @@ describe('DailySummaryService', () => {
           {
             userId,
             rawText: 'grilled chicken with salad',
-            tags: JSON.stringify({
-              protein: true,
-              veggies: true,
-              carbs: 'low',
-              junk: false,
-              timeOfDay: 'noon',
-            }),
+            tags: JSON.stringify(createMealAnalysis({
+              nutrition: {
+                calories: { min: 350, max: 450, confidence: 0.8 },
+                protein_g: { min: 30, max: 40, confidence: 0.9 },
+                carbs_g: { min: 10, max: 15, confidence: 0.7 },
+                fat_g: { min: 8, max: 12, confidence: 0.6 },
+                fiber_g: null,
+              },
+              categories: {
+                veggies: { value: true, confidence: 0.9 },
+                junk: { value: false, confidence: 0.9 },
+                homemade: { value: true, confidence: 0.8 },
+              },
+              meal_type: { value: 'lunch', confidence: 0.8 },
+            })),
             createdAt: new Date('2024-01-15T12:00:00Z'),
           },
           {
             userId,
             rawText: 'pizza',
-            tags: JSON.stringify({
-              protein: false,
-              veggies: false,
-              carbs: 'high',
-              junk: true,
-              timeOfDay: 'evening',
-            }),
+            tags: JSON.stringify(createMealAnalysis({
+              nutrition: {
+                calories: { min: 600, max: 800, confidence: 0.8 },
+                protein_g: { min: 15, max: 25, confidence: 0.7 },
+                carbs_g: { min: 60, max: 80, confidence: 0.8 },
+                fat_g: { min: 25, max: 35, confidence: 0.7 },
+                fiber_g: null,
+              },
+              categories: {
+                veggies: { value: false, confidence: 0.8 },
+                junk: { value: true, confidence: 0.9 },
+                homemade: { value: false, confidence: 0.8 },
+                processing_level: { value: 4, confidence: 0.8 },
+              },
+              meal_type: { value: 'dinner', confidence: 0.8 },
+            })),
             createdAt: new Date('2024-01-15T18:00:00Z'),
           },
           {
             userId,
             rawText: 'late night snack',
-            tags: JSON.stringify({
-              protein: false,
-              veggies: false,
-              carbs: 'medium',
-              junk: false,
-              timeOfDay: 'late',
-            }),
-            createdAt: new Date('2024-01-15T21:30:00Z'), // 21:30 UTC to stay within day bounds
+            tags: JSON.stringify(createMealAnalysis({
+              nutrition: {
+                calories: { min: 150, max: 200, confidence: 0.6 },
+                protein_g: { min: 3, max: 8, confidence: 0.5 },
+                carbs_g: { min: 20, max: 30, confidence: 0.7 },
+                fat_g: { min: 5, max: 10, confidence: 0.5 },
+                fiber_g: null,
+              },
+              categories: {
+                veggies: { value: false, confidence: 0.8 },
+                junk: { value: false, confidence: 0.7 },
+                homemade: { value: true, confidence: 0.6 },
+              },
+              meal_type: { value: 'snack', confidence: 0.8 },
+            })),
+            createdAt: new Date('2024-01-15T21:00:00Z'), // Late snack at 21:00
           },
         ],
       });
@@ -98,9 +149,9 @@ describe('DailySummaryService', () => {
       const summary = await service.composeDailySummary(userId, testDate);
       
       expect(summary.mealsCount).toBe(3);
-      expect(summary.lateMeals).toBe(1); // 1 late meal (23:00)
+      expect(summary.lateMeals).toBe(1); // 1 late meal (dinner at 21:30, which is after 21:00 for dinners)
       expect(summary.veggiesRatio).toBe(1/3); // 1 out of 3 meals had veggies (grilled chicken with salad)
-      expect(summary.proteinRatio).toBe(1/3); // 1 out of 3 meals had protein (grilled chicken)
+      expect(summary.proteinRatio).toBe(1/3); // 1 out of 3 meals had significant protein (>15g: grilled chicken)
       expect(summary.junkRatio).toBe(1/3); // 1 out of 3 meals was junk (pizza)
     });
 
@@ -113,25 +164,43 @@ describe('DailySummaryService', () => {
           {
             userId,
             rawText: 'pizza',
-            tags: JSON.stringify({
-              protein: false,
-              veggies: false,
-              carbs: 'high',
-              junk: true,
-              timeOfDay: 'late',
-            }),
-            createdAt: new Date('2024-01-15T21:30:00Z'), // Late but within day bounds
+            tags: JSON.stringify(createMealAnalysis({
+              categories: {
+                veggies: { value: false, confidence: 0.9 },
+                junk: { value: true, confidence: 0.9 },
+                homemade: { value: false, confidence: 0.8 },
+                processing_level: { value: 4, confidence: 0.8 },
+              },
+              nutrition: {
+                calories: { min: 600, max: 800, confidence: 0.8 },
+                protein_g: { min: 10, max: 15, confidence: 0.7 }, // Low protein
+                carbs_g: { min: 60, max: 80, confidence: 0.8 },
+                fat_g: { min: 25, max: 35, confidence: 0.7 },
+                fiber_g: null,
+              },
+              meal_type: { value: 'dinner', confidence: 0.8 },
+            })),
+            createdAt: new Date('2024-01-15T21:30:00Z'), // Late dinner (after 21:00)
           },
           {
             userId,
             rawText: 'burger',
-            tags: JSON.stringify({
-              protein: false,
-              veggies: false,
-              carbs: 'high',
-              junk: true,
-              timeOfDay: 'evening',
-            }),
+            tags: JSON.stringify(createMealAnalysis({
+              categories: {
+                veggies: { value: false, confidence: 0.9 },
+                junk: { value: true, confidence: 0.9 },
+                homemade: { value: false, confidence: 0.8 },
+                processing_level: { value: 4, confidence: 0.8 },
+              },
+              nutrition: {
+                calories: { min: 500, max: 700, confidence: 0.8 },
+                protein_g: { min: 12, max: 18, confidence: 0.7 }, // Low protein
+                carbs_g: { min: 40, max: 60, confidence: 0.8 },
+                fat_g: { min: 20, max: 30, confidence: 0.7 },
+                fiber_g: null,
+              },
+              meal_type: { value: 'lunch', confidence: 0.8 },
+            })),
             createdAt: new Date('2024-01-15T18:00:00Z'),
           },
         ],
@@ -154,25 +223,41 @@ describe('DailySummaryService', () => {
           {
             userId,
             rawText: 'grilled chicken with vegetables',
-            tags: JSON.stringify({
-              protein: true,
-              veggies: true,
-              carbs: 'low',
-              junk: false,
-              timeOfDay: 'noon',
-            }),
+            tags: JSON.stringify(createMealAnalysis({
+              categories: {
+                veggies: { value: true, confidence: 0.9 },
+                junk: { value: false, confidence: 0.9 },
+                homemade: { value: true, confidence: 0.8 },
+              },
+              nutrition: {
+                calories: { min: 350, max: 450, confidence: 0.8 },
+                protein_g: { min: 35, max: 45, confidence: 0.9 }, // High protein
+                carbs_g: { min: 10, max: 15, confidence: 0.7 },
+                fat_g: { min: 8, max: 12, confidence: 0.6 },
+                fiber_g: { min: 5, max: 8, confidence: 0.7 },
+              },
+              meal_type: { value: 'lunch', confidence: 0.8 },
+            })),
             createdAt: new Date('2024-01-15T12:00:00Z'),
           },
           {
             userId,
             rawText: 'salmon with quinoa and broccoli',
-            tags: JSON.stringify({
-              protein: true,
-              veggies: true,
-              carbs: 'medium',
-              junk: false,
-              timeOfDay: 'evening',
-            }),
+            tags: JSON.stringify(createMealAnalysis({
+              categories: {
+                veggies: { value: true, confidence: 0.9 },
+                junk: { value: false, confidence: 0.9 },
+                homemade: { value: true, confidence: 0.8 },
+              },
+              nutrition: {
+                calories: { min: 400, max: 500, confidence: 0.8 },
+                protein_g: { min: 30, max: 40, confidence: 0.9 }, // High protein
+                carbs_g: { min: 25, max: 35, confidence: 0.8 },
+                fat_g: { min: 15, max: 20, confidence: 0.7 },
+                fiber_g: { min: 6, max: 10, confidence: 0.8 },
+              },
+              meal_type: { value: 'dinner', confidence: 0.8 },
+            })),
             createdAt: new Date('2024-01-15T18:00:00Z'),
           },
         ],

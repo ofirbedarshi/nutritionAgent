@@ -19,6 +19,35 @@ jest.mock('../../src/ai/AIOrchestrator', () => ({
   routeMessage: jest.fn(),
 }));
 
+// Mock AIMealAnalyzer to avoid real OpenAI calls
+jest.mock('../../src/modules/meals/AIMealAnalyzer', () => ({
+  AIMealAnalyzer: jest.fn().mockImplementation(() => ({
+    analyzeMeal: jest.fn().mockResolvedValue({
+      nutrition: {
+        calories: { min: 300, max: 400, confidence: 0.8 },
+        protein_g: { min: 25, max: 35, confidence: 0.9 },
+        carbs_g: { min: 15, max: 25, confidence: 0.7 },
+        fat_g: { min: 10, max: 15, confidence: 0.6 },
+        fiber_g: null,
+      },
+      categories: {
+        veggies: { value: true, confidence: 0.9 },
+        junk: { value: false, confidence: 0.8 },
+        homemade: { value: true, confidence: 0.7 },
+      },
+      ingredients: [
+        { name: 'chicken', confidence: 0.9 },
+        { name: 'salad', confidence: 0.8 },
+      ],
+      meal_type: { value: 'lunch', confidence: 0.8 },
+      portion_size: { value: 'medium', confidence: 0.7 },
+      overall_confidence: 0.8,
+      estimation_source: 'openai',
+      classification_version: 1,
+    }),
+  })),
+}));
+
 import { routeMessage } from '../../src/ai/AIOrchestrator';
 const mockRouteMessage = routeMessage as jest.MockedFunction<typeof routeMessage>;
 
@@ -76,16 +105,19 @@ describe('Webhook Integration Tests', () => {
       // Verify provider methods were called
       expect(mockWhatsAppProvider.validateWebhook).toHaveBeenCalled();
       expect(mockWhatsAppProvider.parseIncoming).toHaveBeenCalled();
-      expect(mockWhatsAppProvider.sendText).toHaveBeenCalled();
+      expect(mockWhatsAppProvider.sendText).toHaveBeenCalledWith({
+        to: '+1234567890',
+        text: 'Meal logged!',
+      });
 
       // Check that meal was created in database
       const meal = await testPrisma.meal.findFirst({
         where: { rawText: 'grilled chicken and salad' },
       });
       expect(meal).toBeTruthy();
-      const tags = JSON.parse(meal!.tags);
-      expect(tags.protein).toBe(true);
-      expect(tags.veggies).toBe(true);
+      const analysis = JSON.parse(meal!.tags);
+      expect(analysis.categories.veggies.value).toBe(true);
+      expect(analysis.overall_confidence).toBeGreaterThan(0);
 
       // Check that user was created
       const user = await testPrisma.user.findFirst({

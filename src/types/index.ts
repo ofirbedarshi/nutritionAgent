@@ -101,6 +101,9 @@ export type DailySummary = {
   readonly suggestions: readonly string[];
 };
 
+// Meal Analysis Types
+export { MealAnalysis } from './meal';
+
 // Database Entity Extensions
 export type UserWithPreferences = {
   readonly id: string;
