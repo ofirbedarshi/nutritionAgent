@@ -48,6 +48,16 @@ jest.mock('../../src/modules/meals/AIMealAnalyzer', () => ({
   })),
 }));
 
+// Mock MediaProcessingService to avoid real media downloads during tests
+jest.mock('../../src/modules/media/MediaProcessingService', () => ({
+  MediaProcessingService: jest.fn().mockImplementation(() => ({
+    processMedia: jest.fn().mockResolvedValue({
+      success: true,
+      text: 'Test media processed successfully',
+    }),
+  })),
+}));
+
 import { routeMessage } from '../../src/ai/AIOrchestrator';
 const mockRouteMessage = routeMessage as jest.MockedFunction<typeof routeMessage>;
 
@@ -228,6 +238,82 @@ describe('Webhook Integration Tests', () => {
       expect(mockWhatsAppProvider.sendText).toHaveBeenCalledWith({
         to: '+1234567890',
         text: 'Message too long. Please keep it under 1000 characters.',
+      });
+    });
+
+    test('should handle image message', async () => {
+      // Mock provider responses for image message
+      mockWhatsAppProvider.validateWebhook.mockReturnValue(true);
+      mockWhatsAppProvider.parseIncoming.mockResolvedValue({
+        from: '+1234567890',
+        type: 'image',
+        text: 'My lunch today',
+        mediaUrl: 'https://api.twilio.com/image.jpg',
+        mimeType: 'image/jpeg',
+        timestamp: new Date(),
+      });
+      mockWhatsAppProvider.sendText.mockResolvedValue({
+        success: true,
+        messageId: 'msg456',
+      });
+
+      const response = await request(app)
+        .post('/webhooks/whatsapp')
+        .send({
+          From: 'whatsapp:+1234567890',
+          MediaUrl0: 'https://api.twilio.com/image.jpg',
+          MediaContentType0: 'image/jpeg',
+          Body: 'My lunch today',
+          MessageSid: 'test456',
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.status).toBe('success');
+      expect(response.body.type).toBe('media_received');
+
+      // Verify provider methods were called
+      expect(mockWhatsAppProvider.validateWebhook).toHaveBeenCalled();
+      expect(mockWhatsAppProvider.parseIncoming).toHaveBeenCalled();
+      expect(mockWhatsAppProvider.sendText).toHaveBeenCalledWith({
+        to: '+1234567890',
+        text: expect.stringContaining('Thanks! I received your image message'),
+      });
+    });
+
+    test('should handle voice message', async () => {
+      // Mock provider responses for voice message
+      mockWhatsAppProvider.validateWebhook.mockReturnValue(true);
+      mockWhatsAppProvider.parseIncoming.mockResolvedValue({
+        from: '+1234567890',
+        type: 'voice',
+        mediaUrl: 'https://api.twilio.com/audio.ogg',
+        mimeType: 'audio/ogg',
+        timestamp: new Date(),
+      });
+      mockWhatsAppProvider.sendText.mockResolvedValue({
+        success: true,
+        messageId: 'msg789',
+      });
+
+      const response = await request(app)
+        .post('/webhooks/whatsapp')
+        .send({
+          From: 'whatsapp:+1234567890',
+          MediaUrl0: 'https://api.twilio.com/audio.ogg',
+          MediaContentType0: 'audio/ogg',
+          MessageSid: 'test789',
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.status).toBe('success');
+      expect(response.body.type).toBe('media_received');
+
+      // Verify provider methods were called
+      expect(mockWhatsAppProvider.validateWebhook).toHaveBeenCalled();
+      expect(mockWhatsAppProvider.parseIncoming).toHaveBeenCalled();
+      expect(mockWhatsAppProvider.sendText).toHaveBeenCalledWith({
+        to: '+1234567890',
+        text: expect.stringContaining('Thanks! I received your voice message'),
       });
     });
 

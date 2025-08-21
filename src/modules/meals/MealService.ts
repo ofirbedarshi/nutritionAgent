@@ -66,7 +66,7 @@ export class MealService {
    * Generate a personalized hint for a meal
    */
   generateMealHint(_user: UserWithPreferences, _analysis: MealAnalysis): string {
-    return 'Meal logged!';
+    return JSON.stringify(_analysis);
   }
 
   /**

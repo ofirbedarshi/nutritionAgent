@@ -74,8 +74,10 @@ export type MealTags = {
 // WhatsApp Provider Types
 export type IncomingMessage = {
   readonly from: string;
-  readonly type: 'text';
-  readonly text: string;
+  readonly type: 'text' | 'image' | 'voice';
+  readonly text?: string;           // For text messages and transcribed voice
+  readonly mediaUrl?: string;       // For image/voice file URL
+  readonly mimeType?: string;       // image/jpeg, audio/ogg, etc.
   readonly timestamp: Date;
 };
 

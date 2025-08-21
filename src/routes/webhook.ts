@@ -36,8 +36,8 @@ export function createWebhookRouter(
       // Parse incoming message
       const incomingMessage = await whatsAppProvider.parseIncoming(req);
       
-      // Validate message length
-      if (!validateMessageLength(incomingMessage.text)) {
+      // Validate message length (only for text messages)
+      if (incomingMessage.type === 'text' && incomingMessage.text && !validateMessageLength(incomingMessage.text)) {
         logger.warn('Invalid message length', { 
           from: incomingMessage.from,
           length: incomingMessage.text.length 
@@ -55,7 +55,10 @@ export function createWebhookRouter(
       // Process message using the service
       const message: IncomingMessage = {
         from: incomingMessage.from,
+        type: incomingMessage.type,
         text: incomingMessage.text,
+        mediaUrl: incomingMessage.mediaUrl,
+        mimeType: incomingMessage.mimeType,
         timestamp: incomingMessage.timestamp || new Date(),
       };
 

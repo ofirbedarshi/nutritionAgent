@@ -5,8 +5,10 @@ import { Request } from 'express';
 
 export interface IncomingMessage {
   from: string;
-  type: 'text';
-  text: string;
+  type: 'text' | 'image' | 'voice';
+  text?: string;           // For text messages and transcribed voice
+  mediaUrl?: string;       // For image/voice file URL
+  mimeType?: string;       // image/jpeg, audio/ogg, etc.
   timestamp?: Date;
 }
 

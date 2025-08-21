@@ -24,22 +24,56 @@ export class TwilioProvider implements WhatsAppProvider {
     const body = req.body as Record<string, string>;
 
     // Validate required fields
-    if (!body.From || !body.Body) {
+    if (!body.From) {
       throw new Error('Missing required fields in Twilio webhook');
     }
 
     // Extract phone number (remove whatsapp: prefix)
     const from = normalizePhoneNumber(body.From.replace('whatsapp:', ''));
-    const text = body.Body.trim();
 
-    if (!text) {
-      throw new Error('Empty message body');
+    // Check if this is a media message
+    const mediaUrl = body.MediaUrl0;
+    const mediaContentType = body.MediaContentType0;
+    const messageBody = body.Body?.trim() || '';
+
+    if (mediaUrl && mediaContentType) {
+      // Determine message type based on media content type
+      let messageType: 'image' | 'voice';
+      
+      if (mediaContentType.startsWith('image/')) {
+        messageType = 'image';
+      } else if (mediaContentType.startsWith('audio/')) {
+        messageType = 'voice';
+      } else {
+        throw new Error(`Unsupported media type: ${mediaContentType}`);
+      }
+
+      logger.info('Received media message', {
+        from,
+        type: messageType,
+        mediaContentType,
+        hasCaption: !!messageBody,
+      });
+
+      return {
+        from,
+        type: messageType,
+        text: messageBody || undefined, // Caption text if any
+        mediaUrl,
+        mimeType: mediaContentType,
+        timestamp: new Date(),
+      };
+    }
+
+    // Handle text message
+    if (!messageBody) {
+      throw new Error('Empty message body and no media');
     }
 
     return {
       from,
       type: 'text',
-      text,
+      text: messageBody,
       timestamp: new Date(),
     };
   }
@@ -91,7 +125,9 @@ export class TwilioProvider implements WhatsAppProvider {
       // In production, you should validate the webhook signature
       // For now, we'll do basic validation
       const body = req.body as Record<string, string>;
-      return !!(body.From && body.Body && body.MessageSid);
+      
+      // Must have From and MessageSid, and either Body or MediaUrl0
+      return !!(body.From && body.MessageSid && (body.Body || body.MediaUrl0));
     } catch (error) {
       logger.warn('Webhook validation failed', { error });
       return false;
