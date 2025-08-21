@@ -4,28 +4,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { WhatsAppProvider } from '../lib/provider/WhatsAppProvider';
-import { UserService } from '../modules/users/UserService';
-import { UserRepository } from '../modules/users/UserRepository';
-import { PreferenceService } from '../modules/prefs/PreferenceService';
-import { MealService } from '../modules/meals/MealService';
-import { DailySummaryService } from '../modules/reports/DailySummaryService';
-import { CoachService } from '../modules/coach/CoachService';
-import { routeMessage } from '../ai/AIOrchestrator';
-import { 
-  setPreferencesSchema, 
-  logMealSchema, 
-  requestSummarySchema, 
-  askCoachSchema
-} from '../ai/schemas';
-import { 
-  type UserContext,
-  type SetPreferencesArgs,
-  type LogMealArgs,
-  type RequestSummaryArgs,
-  type AskCoachArgs,
-  type Goal,
-  type Tone
-} from '../types';
+import { MessageProcessingService, type IncomingMessage } from '../modules/messaging/MessageProcessingService';
 import { 
   ERROR_MESSAGES,
   LOG_TAGS
@@ -39,11 +18,8 @@ export function createWebhookRouter(
 ): Router {
   const router = Router();
   
-  // Services
-  const userService = new UserService(new UserRepository(prisma));
-  const preferenceService = new PreferenceService(prisma);
-  const mealService = new MealService(prisma);
-  const summaryService = new DailySummaryService(prisma, whatsAppProvider);
+  // Message processing service
+  const messageProcessingService = new MessageProcessingService(prisma, whatsAppProvider);
 
   /**
    * Main WhatsApp webhook handler with AI orchestrator
@@ -76,150 +52,15 @@ export function createWebhookRouter(
         return;
       }
 
-      // Get or create user and load preferences for context
-      const user = await userService.getOrCreateUser(incomingMessage.from);
-      const preferences = user.preferences;
-      
-      // Log incoming message
-      await prisma.messageLog.create({
-        data: {
-          userId: user.id,
-          direction: 'IN',
-          payload: JSON.stringify({
-            type: 'text',
-            text: incomingMessage.text,
-            from: incomingMessage.from,
-            timestamp: incomingMessage.timestamp,
-          }),
-        },
-      });
-
-      logger.info('Incoming message processed', {
-        userId: user.id,
+      // Process message using the service
+      const message: IncomingMessage = {
         from: incomingMessage.from,
-        textLength: incomingMessage.text.length,
-      });
-
-      // Build user context for AI
-      const context: UserContext = {
-        goal: preferences?.goal as Goal | undefined,
-        tone: preferences?.tone as Tone | undefined,
-        reportTime: preferences?.reportTime,
-        focus: preferences?.focus ? JSON.parse(preferences.focus) : undefined,
+        text: incomingMessage.text,
+        timestamp: incomingMessage.timestamp || new Date(),
       };
 
-      // Route message using AI orchestrator
-      const orchestratorResult = await routeMessage(incomingMessage.text, context);
-      
-      let responseText: string;
-      let responseType: string;
-
-      if (orchestratorResult.type === 'tool' && orchestratorResult.toolName && orchestratorResult.args) {
-        // Handle tool execution
-        const { toolName, args } = orchestratorResult;
-        
-        logger.info('Executing tool', { toolName, args });
-
-        switch (toolName) {
-          case 'set_preferences':
-            try {
-              const validArgs = setPreferencesSchema.parse(args) as SetPreferencesArgs;
-              
-              // Convert readonly arrays to mutable for PreferenceService compatibility
-              const preferenceUpdate = {
-                ...validArgs,
-                focus: validArgs.focus ? [...validArgs.focus] : undefined,
-              };
-              
-              await preferenceService.applyPreferences(user.id, preferenceUpdate);
-              
-              const updates = [];
-              if (validArgs.goal) updates.push(`goal: ${validArgs.goal}`);
-              if (validArgs.tone) updates.push(`tone: ${validArgs.tone}`);
-              if (validArgs.reportTime) updates.push(`report time: ${validArgs.reportTime}`);
-              if (validArgs.focus) updates.push(`focus: ${validArgs.focus.join(', ')}`);
-              if (validArgs.dietaryRestrictions) updates.push(`dietary restrictions: ${validArgs.dietaryRestrictions.join(', ')}`);
-              
-              responseText = `✅ Updated: ${updates.join(', ')}`;
-              responseType = 'preference_update';
-            } catch (error) {
-              logger.error('Invalid preference args', { error, args });
-              responseText = 'Sorry, I couldn\'t understand your preference update. Please try again.';
-              responseType = 'error';
-            }
-            break;
-
-          case 'log_meal':
-            try {
-              const validArgs = logMealSchema.parse(args) as LogMealArgs;
-              const mealTime = validArgs.when ? new Date(validArgs.when) : incomingMessage.timestamp;
-              
-              const { meal, tags } = await mealService.createMeal(
-                user.id,
-                validArgs.text,
-                'TEXT',
-                mealTime
-              );
-
-              // Generate personalized hint
-              responseText = mealService.generateMealHint(user, tags);
-              responseType = 'meal_logged';
-              
-              logger.info('Meal logged via AI', {
-                userId: user.id,
-                mealId: meal.id,
-                tags,
-              });
-            } catch (error) {
-              logger.error('Invalid meal args', { error, args });
-              responseText = 'Sorry, I couldn\'t log that meal. Please try again.';
-              responseType = 'error';
-            }
-            break;
-
-          case 'request_summary':
-            try {
-              const validArgs = requestSummarySchema.parse(args) as RequestSummaryArgs;
-              const summaryDate = validArgs.date ? new Date(validArgs.date) : new Date();
-              
-              if (validArgs.period === 'daily') {
-                const summary = await summaryService.composeDailySummary(user.id, summaryDate);
-                const tone = (user.preferences?.tone as Tone) || 'friendly';
-                responseText = summaryService.formatSummaryText(summary, tone);
-              } else {
-                // Weekly summary placeholder
-                responseText = 'Weekly summaries coming soon! For now, try asking for your daily report.';
-              }
-              responseType = 'summary';
-            } catch (error) {
-              logger.error('Invalid summary args', { error, args });
-              responseText = 'Sorry, I couldn\'t generate that summary. Please try again.';
-              responseType = 'error';
-            }
-            break;
-
-          case 'ask_coach':
-            try {
-              const validArgs = askCoachSchema.parse(args) as AskCoachArgs;
-              responseText = CoachService.generateAdvice(validArgs.question);
-              responseType = 'coaching_advice';
-            } catch (error) {
-              logger.error('Invalid coach args', { error, args });
-              responseText = 'I\'m here to help with your nutrition goals! What would you like to know?';
-              responseType = 'error';
-            }
-            break;
-
-          default:
-            logger.warn('Unknown tool', { toolName });
-            responseText = 'I\'m not sure how to help with that. Try asking about meals, goals, or nutrition advice!';
-            responseType = 'unknown_tool';
-        }
-      } else {
-        // Direct text response from AI
-        responseText = orchestratorResult.text || 'I\'m here to help with your nutrition goals!';
-        responseType = 'ai_response';
-      }
+      const response = await messageProcessingService.processMessage(message);
+      const { text: responseText, type: responseType } = response;
 
       // Send response to user
       await whatsAppProvider.sendText({
@@ -227,24 +68,10 @@ export function createWebhookRouter(
         text: responseText,
       });
 
-      // Log outgoing message
-      await prisma.messageLog.create({
-        data: {
-          userId: user.id,
-          direction: 'OUT',
-          payload: JSON.stringify({
-            type: responseType,
-            text: responseText,
-            tool: orchestratorResult.toolName,
-            args: orchestratorResult.args,
-          }),
-        },
-      });
-
-      logger.info('AI orchestrated response sent', {
-        userId: user.id,
+      logger.info('WhatsApp response sent', {
+        from: incomingMessage.from,
         responseType,
-        tool: orchestratorResult.toolName,
+        tool: response.toolName,
       });
 
       res.json({ status: 'success', type: responseType });

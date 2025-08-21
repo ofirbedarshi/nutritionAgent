@@ -3,17 +3,14 @@
  */
 import { PrismaClient, Meal } from '@prisma/client';
 import { MealTagger, MealTags } from './MealTagger';
-import { HintGenerator, HintContext } from './HintGenerator';
 import { UserWithPreferences } from '../users/UserRepository';
 import { logger } from '../../lib/logger';
 
 export class MealService {
   private tagger: MealTagger;
-  private hintGenerator: HintGenerator;
 
   constructor(private prisma: PrismaClient) {
     this.tagger = new MealTagger();
-    this.hintGenerator = new HintGenerator();
   }
 
   /**
@@ -58,19 +55,8 @@ export class MealService {
   /**
    * Generate a personalized hint for a meal
    */
-  generateMealHint(user: UserWithPreferences, tags: MealTags): string {
-    if (!user.preferences) {
-      return 'Meal logged! 📝';
-    }
-
-    const context: HintContext = {
-      goal: user.preferences.goal as HintContext['goal'],
-      tone: user.preferences.tone as HintContext['tone'],
-      focus: JSON.parse(user.preferences.focus) as string[],
-      tags,
-    };
-
-    return this.hintGenerator.generateHint(context);
+  generateMealHint(_user: UserWithPreferences, _tags: MealTags): string {
+    return 'Meal logged!';
   }
 
   /**
@@ -103,20 +89,6 @@ export class MealService {
       });
       throw error;
     }
-  }
-
-  /**
-   * Get meals for today for a specific user
-   */
-  async getTodaysMeals(userId: string): Promise<Meal[]> {
-    const today = new Date();
-    const startOfDay = new Date(today);
-    startOfDay.setHours(0, 0, 0, 0);
-    
-    const endOfDay = new Date(today);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    return this.getMealsInRange(userId, startOfDay, endOfDay);
   }
 
   /**
